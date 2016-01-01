@@ -9,7 +9,6 @@ from sklearn.ensemble import RandomForestClassifier as RandomForest
 # from sklearn.ensemble import BaggingClassifier as Bagging
 # from sklearn.svm import SVC as SVC  # Support vector machines
 # from sklearn.neighbors import KNeighborsClassifier as KNN
-from sklearn.linear_model import LogisticRegression as LogReg
 # from sklearn.linear_model import RidgeClassifier as Ridge
 # from sknn.mlp import Classifier as NeuralNetClassifier, Layer as NeuralNetLayer
 from sklearn.ensemble import GradientBoostingClassifier as GradBoost
@@ -40,7 +39,8 @@ __plots__ = os.path.join(__root__, 'lib/visualization')
 sys.path.append(__root__)
 # Ignore PEP8 Warning. Need path before import to enable execution from project folder
 from lib.utils import support_functions as sf
-from models import ensemble_models as ml_ens
+from models import ensemble_models
+from lib.visualization import visualization
 
 #########################################################################################################
 
@@ -147,6 +147,9 @@ def main():
 
     start_time = time.time()
 
+    # Create precision_recall-curve?
+    prec_recall_plot = True
+
     # Choose models for the ensemble. Uncomment to choose model needed
     estimator_model0 = RandomForest
     estimator_keywords_model0 = dict(n_estimators=1000, verbose=0, criterion='entropy', n_jobs=-1,
@@ -156,22 +159,56 @@ def main():
     estimator_keywords_model1 = dict(n_estimators=1000, loss='deviance', learning_rate=0.01, verbose=0, max_depth=5,
                                      subsample=1.0)
 
-    # estimator = SVC
-    # estimator_keywords = dict(C=1, kernel='rbf', class_weight='auto')
-    estimator_model2 = LogReg
-    estimator_keywords_model2 = dict(solver='liblinear')
-
-    # dict model names and parameters always need to have keys model0, model1, model2...
-    model_names_list = dict(model0=estimator_model0, model1=estimator_model1, model2=estimator_model2)
-    model_parameters_list = dict(model0=estimator_keywords_model0, model1=estimator_keywords_model1,
-                                 model2=estimator_keywords_model2)
+    model_names_list = dict(model0=estimator_model0, model1=estimator_model1)
+    model_parameters_list = dict(model0=estimator_keywords_model0, model1=estimator_keywords_model1)
 
     [input_features, output] = telecom_churn(use_synthetic_data=False, feature_scaling=True)
 
-    ml_ens.majority_voting(input_features, output, model_names_list, model_parameters_list,
-                           run_cv_flag=False, num_model_iterations=1, plot_learning_curve=False)
+    # ensemble_models.majority_voting(input_features, output, model_names_list, model_parameters_list,
+    #                                 run_cv_flag=True, num_model_iterations=1, plot_learning_curve=False,
+    #                                 run_prob_predictions=True, classification_threshold=0.45)
+
+    if prec_recall_plot:
+        # Divide 0 and 0.9 by 21 equally distributed values (including both).
+        # Ignoring 1.0 as it has Fbeta_score of 0
+        num_of_thresholds = np.linspace(0, 0.9, 21)
+
+        threshold = np.zeros((len(num_of_thresholds), 1), dtype=float)
+
+        precision = np.zeros((len(num_of_thresholds), 1), dtype=float)
+
+        recall = np.zeros((len(num_of_thresholds), 1), dtype=float)
+
+        fbeta_score = np.zeros((len(num_of_thresholds), 1), dtype=float)
+
+        idx = 0
+
+        for classification_threshold in num_of_thresholds:
+            prec_recall = ensemble_models.average_prob(input_features, output, model_names_list, model_parameters_list,
+                                                       run_cv_flag=False, num_model_iterations=1,
+                                                       plot_learning_curve=False, run_prob_predictions=True,
+                                                       classification_threshold=classification_threshold)
+
+            threshold[idx] = classification_threshold
+            precision[idx] = round(prec_recall[0] * 100)  # Convert to %
+            recall[idx] = round(prec_recall[1] * 100)
+            fbeta_score[idx] = round(prec_recall[2] * 100)
+
+            idx += 1
+
+        # Call function for plotting
+        vis = visualization.Plots()
+        vis.basic_2d_plot(x=threshold, y=(precision, recall, fbeta_score),
+                          legends=("Precision", "Recall", "Fbeta_score (beta=2)"),
+                          title="Precision Recall Curve", xaxis_label="Classification Threshold",
+                          yaxis_label="Score %")
 
     ##################################
+    # Other model
+    # estimator = SVC
+    # estimator_keywords = dict(C=1, kernel='rbf', class_weight='auto')
+    # estimator_model2 = LogReg
+    # estimator_keywords_model2 = dict(solver='liblinear')
 
     # Neural network
     # estimator = NeuralNetClassifier
@@ -179,19 +216,7 @@ def main():
     #                                   NeuralNetLayer("Softmax")],
     #                           learning_rate=0.001, n_iter=50)
 
-    # Pep8 shows a warning for all other estimators other than RF (probably because RF is the default class in
-    # telecom / kids churn. This is not a valid warning and has been validated
-
-    # Choose problem to solve
-
-    # telecom_churn(use_synthetic_data=False, num_model_iterations=1, plot_learning_curve=False, feature_scaling=True,
-    #               clf_class=estimator, **estimator_keywords)
-
-    # telecom_churn(use_synthetic_data=True, num_model_iterations=1, plot_learning_curve=True, feature_scaling=True,
-    #               clf_class=estimator, **estimator_keywords)
-
-    # kids_churn(use_synthetic_data=True, num_model_iterations=1, plot_learning_curve=False, feature_scaling=True,
-    #            clf_class=estimator, **estimator_keywords)
+    ##################################
 
     print("Total time: %0.3f" % float(time.time() - start_time))
 

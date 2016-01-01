@@ -51,14 +51,14 @@ def run_models_wrapper(x, y, run_cv_flag=False, num_model_iterations=1, plot_lea
     y_test = np.array(y_test)
 
     if run_cv_flag:
-        # Run model on cross-validation dataproc and predict test dataproc on trained model
+        # Run model on cross-validation data and predict test data on trained model
         log.info(sf.Color.BOLD + sf.Color.GREEN + "\nRunning KFold Cross-Validation / Test" + sf.Color.END)
         y_pred_kfold = run_model_regression(run_test_only=0, x_train=x_train, y_train=y_train, x_test=x_test,
                                             y_test=y_test, num_model_iterations=num_model_iterations,
                                             plot_learning_curve=plot_learning_curve, clf_class=clf_class, **kwargs)
         log.debug('KFold Output Dimensions: %s', y_pred_kfold.shape)
 
-    # Run test - Train model and predict on test dataproc
+    # Run test - Train model and predict on test data
     log.info(sf.Color.BOLD + sf.Color.GREEN + "\nRunning Only Test" + sf.Color.END)
     y_pred_test = run_model_regression(run_test_only=1, x_train=x_train, y_train=y_train, x_test=x_test, y_test=y_test,
                                        num_model_iterations=num_model_iterations, clf_class=clf_class, **kwargs)
@@ -75,8 +75,8 @@ def run_models_wrapper(x, y, run_cv_flag=False, num_model_iterations=1, plot_lea
 def run_model_regression(run_test_only, x_train, y_train, x_test, y_test, num_model_iterations=1,
                          plot_learning_curve=False, clf_class=RandomForestReg, **kwargs):
     # # @brief: For cross-validation, Runs the model and gives rmse / mse. Also, will run the trained model
-    # #         on test dataproc if run_test_only is set
-    # #         For test, trains the model on train dataproc and predicts rmse / mse for test dataproc
+    # #         on test data if run_test_only is set
+    # #         For test, trains the model on train data and predicts rmse / mse for test data
     # # @param: x_train, x_test - Input features (numpy array)
     # #         y_train, y_test - expected output (numpy array)
     # #         plot_learning_curve (only for cv) - bool
@@ -89,9 +89,9 @@ def run_model_regression(run_test_only, x_train, y_train, x_test, y_test, num_mo
     # Plot learning curve only for cv
     if not run_test_only and plot_learning_curve:
         title = "Learning Curves for regression"
-        # Train dataproc further split into train and CV
+        # Train data further split into train and CV
         # Cross validation with 100 iterations to get smoother mean test and train
-        # score curves, each time with 20% dataproc randomly selected as a validation set.
+        # score curves, each time with 20% data randomly selected as a validation set.
         cv = cross_validation.ShuffleSplit(x_train.shape[0], n_iter=100, test_size=0.2, random_state=0)
 
         modeling_tools.plot_learning_curve(clf_class(**kwargs), title, x_train, y_train, cv=cv, n_jobs=-1)
@@ -166,12 +166,10 @@ def run_model_regression(run_test_only, x_train, y_train, x_test, y_test, num_mo
     else:
         return y_pred_cv
 
-# Run k-fold cross-validation and predict on test dataproc from last trained model
 
-
+# Run k-fold cross-validation and predict on test data from last trained model
 def run_kfold_cv(x_train, y_train, x_test, clf_class, **kwargs):
-
-    # Construct a kfolds object from train dataproc
+    # Construct a kfolds object from train data
     kf = KFold(len(y_train), n_folds=5, shuffle=True)
     y_pred_cv = y_train.copy()
 
@@ -192,10 +190,10 @@ def run_kfold_cv(x_train, y_train, x_test, clf_class, **kwargs):
 
         clf.fit(x_cv_train, y_cv_train)
 
-        # Predict on cv dataproc
+        # Predict on cv data
         y_pred_cv[cv_index] = clf.predict(x_cv_test)
 
-    # Now predict test dataproc on trained model
+    # Now predict test data on trained model
     y_pred_test = clf.predict(x_test)
 
     if hasattr(clf, "feature_importances_"):
@@ -208,9 +206,9 @@ def run_kfold_cv(x_train, y_train, x_test, clf_class, **kwargs):
     return y_pred_cv, y_pred_test
 
 
-# Train model and test with CV dataset (over num_train_iterations). Use trained model to predict on test dataproc
+# Train model and test with CV dataset (over num_train_iterations). Use trained model to predict on test data
 def run_cv_test(x_train, y_train, x_test, num_train_iterations=1, test_size=0.2, clf_class=RandomForestReg, **kwargs):
-    # Further split train dataproc into train / cv split
+    # Further split train data into train / cv split
     x_cv_train, x_cv_test, y_cv_train, y_cv_test = train_test_split(x_train, y_train,
                                                                     test_size=test_size, random_state=42)
 
@@ -241,7 +239,7 @@ def run_cv_test(x_train, y_train, x_test, num_train_iterations=1, test_size=0.2,
     return y_pred_test
 
 
-# Train model and predict on test dataproc
+# Train model and predict on test data
 def run_test(x_train, y_train, x_test, clf_class, **kwargs):
     # Initialize a classifier with key word arguments
     clf = clf_class(**kwargs)

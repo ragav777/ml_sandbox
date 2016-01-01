@@ -26,9 +26,10 @@ log = logging.getLogger("info")
 
 #########################################################################################################
 
+
 # Use majority voting to predict classes of new ensemble. For even number of models, split = majority!
 def majority_voting(input_features, output, model_names, model_parameters, run_cv_flag=False, num_model_iterations=1,
-                    plot_learning_curve=False, run_prob_predictions=True):
+                    plot_learning_curve=False, run_prob_predictions=True, classification_threshold=0.5):
     # Check if a minimum of 3 models are there
     if len(model_names) < 2:
         raise ValueError("Need a minimum of 2 models to do an ensemble")
@@ -42,13 +43,14 @@ def majority_voting(input_features, output, model_names, model_parameters, run_c
     for idx in range(num_of_models):
         model_key = "model{:d}".format(idx)
         log.info(sf.Color.BOLD + sf.Color.GREEN + "\nRunning Model {:s}".format(model_names[model_key]) +
-                    sf.Color.END)
+                 sf.Color.END)
         # Append to dictionary with dynamically created key names above
         [actual_output_values[model_key], predicted_output_values[model_key]] = \
             baseline_models.run_models_wrapper(x=input_features, y=output, run_cv_flag=run_cv_flag,
                                                num_model_iterations=num_model_iterations,
                                                plot_learning_curve=plot_learning_curve,
                                                run_prob_predictions=run_prob_predictions,
+                                               classification_threshold=classification_threshold,
                                                clf_class=model_names[model_key], **model_parameters[model_key])
 
         # accuracy(actual_output_values[actual_output_name], predicted_output_values[predicted_output_name])
@@ -76,7 +78,7 @@ def majority_voting(input_features, output, model_names, model_parameters, run_c
                                                   beta=beta, average='binary')
 
     # Log Accuracy and precision / recall values for the ensemble
-    log.info(sf.Color.BOLD + sf.Color.DARKCYAN + "\nEnsemble output for test dataproc" + sf.Color.END)
+    log.info(sf.Color.BOLD + sf.Color.DARKCYAN + "\nEnsemble output for test data" + sf.Color.END)
 
     log.info(
         sf.Color.BOLD + sf.Color.DARKCYAN + "\nAccuracy {:.2f}".format(accuracy_value * 100) +
@@ -86,4 +88,75 @@ def majority_voting(input_features, output, model_names, model_parameters, run_c
         sf.Color.BOLD + sf.Color.DARKCYAN + "\nPrecision {:.2f} Recall {:.2f} Fbeta-score {:.2f}".format(
             prec_recall[0] * 100, prec_recall[1] * 100, prec_recall[2] * 100) + sf.Color.END)
 
+    # Returns precision / recall for the ensemble at the given classification threshold
+    return prec_recall
+
+
+# Use predicted probabilities from models instead of classification. Force return_yprob=True for model to
+# return prediction probabilities
+def average_prob(input_features, output, model_names, model_parameters, run_cv_flag=False, num_model_iterations=1,
+                 plot_learning_curve=False, run_prob_predictions=True, classification_threshold=0.5):
+    # Check if a minimum of 3 models are there
+    if len(model_names) < 2:
+        raise ValueError("Need a minimum of 2 models to do an ensemble")
+
+    actual_output_values = dict()
+    predicted_output_values = dict()
+
+    num_of_models = len(model_names)
+
+    # Get actual and predicted values for each model
+    for idx in range(num_of_models):
+        model_key = "model{:d}".format(idx)
+        log.info(sf.Color.BOLD + sf.Color.GREEN + "\nRunning Model {:s}".format(model_names[model_key]) +
+                 sf.Color.END)
+        # Append to dictionary with dynamically created key names above
+        [actual_output_values[model_key], predicted_output_values[model_key]] = \
+            baseline_models.run_models_wrapper(x=input_features, y=output, run_cv_flag=run_cv_flag,
+                                               num_model_iterations=num_model_iterations,
+                                               plot_learning_curve=plot_learning_curve,
+                                               run_prob_predictions=run_prob_predictions, return_yprob=True,
+                                               classification_threshold=classification_threshold,
+                                               clf_class=model_names[model_key], **model_parameters[model_key])
+
+    y_predicted_ensemble = actual_output_values['model0'].copy()
+
+    y_predicted_prob = np.zeros(len(actual_output_values['model0']), dtype=float)  # Reset for every sample
+
+    # # Create ensemble probability by averaging output probabilities from each model
+    # # Then apply classification threshold on the averaged probability
+    for sample in np.ndindex(predicted_output_values['model0'].shape):
+        for actual_key_name in actual_output_values.iterkeys():
+            # Sum probabilities for each sample from the different models
+            y_predicted_prob[sample] += predicted_output_values[actual_key_name][sample]
+
+        # Average probability
+        y_predicted_prob[sample] /= num_of_models
+
+        # Need to have either numerator or denominator in round() as float to roundup
+        if y_predicted_prob[sample] > classification_threshold:
+            y_predicted_ensemble[sample] = 1
+        else:
+            y_predicted_ensemble[sample] = 0
+
+    accuracy_value = baseline_models.accuracy(actual_output_values['model0'], y_predicted_ensemble)
+
+    beta = 2.0
+
+    prec_recall = precision_recall_fscore_support(y_true=actual_output_values['model0'], y_pred=y_predicted_ensemble,
+                                                  beta=beta, average='binary')
+
+    # Log Accuracy and precision / recall values for the ensemble
+    log.info(sf.Color.BOLD + sf.Color.DARKCYAN + "\nEnsemble output for test data" + sf.Color.END)
+
+    log.info(
+        sf.Color.BOLD + sf.Color.DARKCYAN + "\nAccuracy {:.2f}".format(accuracy_value * 100) +
+        sf.Color.END)
+
+    log.info(
+        sf.Color.BOLD + sf.Color.DARKCYAN + "\nPrecision {:.2f} Recall {:.2f} Fbeta-score {:.2f}".format(
+            prec_recall[0] * 100, prec_recall[1] * 100, prec_recall[2] * 100) + sf.Color.END)
+
+    # Returns precision / recall for the ensemble at the given classification threshold
+    return prec_recall
 ##################################################################################################################

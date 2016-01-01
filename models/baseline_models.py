@@ -34,26 +34,32 @@ log = logging.getLogger('info')
 
 #########################################################################################################
 
+
 # Wrapper function to take input features and output from files with specific problems to solve and
 # call run_models for CV and / or test
 def run_models_wrapper(x, y, run_cv_flag=False, num_model_iterations=1, plot_learning_curve=False,
-                       run_prob_predictions=True, clf_class=RandomForest, **kwargs):
+                       run_prob_predictions=True, return_yprob=False,
+                       classification_threshold=0.5, clf_class=RandomForest, **kwargs):
     if run_cv_flag:
         # Run model on cross-validation dataproc
         log.info(sf.Color.BOLD + sf.Color.GREEN + "\nRunning Cross-Validation" + sf.Color.END)
         run_model(cv_0_test_1=0, x=x, y=y, num_model_iterations=num_model_iterations,
-                  run_prob_predictions=run_prob_predictions, plot_learning_curve=plot_learning_curve,
-                  clf_class=clf_class, **kwargs)
+                  run_prob_predictions=run_prob_predictions, return_yprob=return_yprob,
+                  classification_threshold=classification_threshold,
+                  plot_learning_curve=plot_learning_curve, clf_class=clf_class, **kwargs)
     # Run model on test dataproc
     log.info(sf.Color.BOLD + sf.Color.GREEN + "\nRunnning Test" + sf.Color.END)
     [y_actual, y_predicted] = run_model(cv_0_test_1=1, x=x, y=y, num_model_iterations=num_model_iterations,
-                                        run_prob_predictions=run_prob_predictions, clf_class=clf_class, **kwargs)
+                                        run_prob_predictions=run_prob_predictions, return_yprob=return_yprob,
+                                        classification_threshold=classification_threshold,
+                                        clf_class=clf_class, **kwargs)
 
     return [y_actual, y_predicted]
 
 
 def run_model(cv_0_test_1, x, y, num_model_iterations=1, test_size=0.2, plot_learning_curve=False,
-              run_prob_predictions=False, clf_class=RandomForest, **kwargs):
+              run_prob_predictions=False, return_yprob=False, classification_threshold=0.5, clf_class=RandomForest,
+              **kwargs):
     # # @brief: For cross-validation, Runs the model and gives accuracy and precision / recall
     # #         For test, runs the model and gives accuracy and precision / recall by treating
     # #         a random sample of input dataproc as test dataproc
@@ -114,56 +120,66 @@ def run_model(cv_0_test_1, x, y, num_model_iterations=1, test_size=0.2, plot_lea
     mean_recall = 0
     mean_fbeta_score = 0
 
+    if return_yprob:
+        num_model_iterations = 1  # for probabilities returned, just run 1 iteration
+
     for _ in range(num_model_iterations):
         if cv_0_test_1:  # test
             y_predicted = run_test(x_train=x_train, y_train=y_train, x_test=x_test,
-                                   run_prob_predictions=run_prob_predictions, clf_class=clf_class, **kwargs)
+                                   run_prob_predictions=run_prob_predictions, return_yprob=return_yprob,
+                                   classification_threshold=classification_threshold,
+                                   clf_class=clf_class, **kwargs)
         else:  # cv
-            y_predicted = run_cv(x=x, y=y, clf_class=clf_class, **kwargs)
+            y_predicted = run_cv(x=x, y=y, run_prob_predictions=run_prob_predictions, return_yprob=return_yprob,
+                                 classification_threshold=classification_threshold, clf_class=clf_class, **kwargs)
 
+        # Only do accuracy / precision and recall if actual classified values are returned and not probabilities
+        if not return_yprob:
+            # Accuracy
+            mean_accuracy += accuracy(y_actual, y_predicted)
+
+            mean_correct_positive_prediction += correct_positive_prediction
+            mean_correct_negative_prediction += correct_negative_prediction
+            mean_incorrect_positive_prediction += incorrect_positive_prediction
+            mean_incorrect_negative_prediction += incorrect_negative_prediction
+
+            # Precision recall
+            prec_recall = precision_recall_fscore_support(y_true=y_actual, y_pred=y_predicted, beta=beta,
+                                                          average='binary')
+
+            mean_precision += prec_recall[0]
+            mean_recall += prec_recall[1]
+            mean_fbeta_score += prec_recall[2]
+
+    # Only do accuracy / precision and recall if actual classified values are returned and not probabilities
+    if not return_yprob:
         # Accuracy
-
-        mean_accuracy += accuracy(y_actual, y_predicted)
-
-        mean_correct_positive_prediction += correct_positive_prediction
-        mean_correct_negative_prediction += correct_negative_prediction
-        mean_incorrect_positive_prediction += incorrect_positive_prediction
-        mean_incorrect_negative_prediction += incorrect_negative_prediction
+        mean_accuracy /= num_model_iterations
+        mean_correct_positive_prediction /= num_model_iterations
+        mean_correct_negative_prediction /= num_model_iterations
+        mean_incorrect_positive_prediction /= num_model_iterations
+        mean_incorrect_negative_prediction /= num_model_iterations
 
         # Precision recall
-        prec_recall = precision_recall_fscore_support(y_true=y_actual, y_pred=y_predicted, beta=beta, average='binary')
+        mean_precision /= num_model_iterations
+        mean_recall /= num_model_iterations
+        mean_fbeta_score /= num_model_iterations
 
-        mean_precision += prec_recall[0]
-        mean_recall += prec_recall[1]
-        mean_fbeta_score += prec_recall[2]
+        # Accuracy
+        log.info(sf.Color.BOLD + sf.Color.DARKCYAN + "\nAccuracy {:.2f}".format(mean_accuracy * 100) + sf.Color.END)
 
-    # Accuracy
-    mean_accuracy /= num_model_iterations
-    mean_correct_positive_prediction /= num_model_iterations
-    mean_correct_negative_prediction /= num_model_iterations
-    mean_incorrect_positive_prediction /= num_model_iterations
-    mean_incorrect_negative_prediction /= num_model_iterations
+        log.info(sf.Color.BOLD + sf.Color.DARKCYAN + "\nCorrect positive prediction {:.2f}".format(
+            mean_correct_positive_prediction) + sf.Color.END)
+        log.info(sf.Color.BOLD + sf.Color.DARKCYAN + "\nCorrect negative prediction {:.2f}".format(
+            mean_correct_negative_prediction) + sf.Color.END)
+        log.info(sf.Color.BOLD + sf.Color.DARKCYAN + "\nIncorrect positive prediction {:.2f}".format(
+            mean_incorrect_positive_prediction) + sf.Color.END)
+        log.info(sf.Color.BOLD + sf.Color.DARKCYAN + "\nIncorrect negative prediction {:.2f}".format(
+            mean_incorrect_negative_prediction) + sf.Color.END)
 
-    # Precision recall
-    mean_precision /= num_model_iterations
-    mean_recall /= num_model_iterations
-    mean_fbeta_score /= num_model_iterations
-
-    # Accuracy
-    log.info(sf.Color.BOLD + sf.Color.DARKCYAN + "\nAccuracy {:.2f}".format(mean_accuracy * 100) + sf.Color.END)
-
-    log.info(sf.Color.BOLD + sf.Color.DARKCYAN + "\nCorrect positive prediction {:.2f}".format(
-        mean_correct_positive_prediction) + sf.Color.END)
-    log.info(sf.Color.BOLD + sf.Color.DARKCYAN + "\nCorrect negative prediction {:.2f}".format(
-        mean_correct_negative_prediction) + sf.Color.END)
-    log.info(sf.Color.BOLD + sf.Color.DARKCYAN + "\nIncorrect positive prediction {:.2f}".format(
-        mean_incorrect_positive_prediction) + sf.Color.END)
-    log.info(sf.Color.BOLD + sf.Color.DARKCYAN + "\nIncorrect negative prediction {:.2f}".format(
-        mean_incorrect_negative_prediction) + sf.Color.END)
-
-    # Precision recall
-    log.info(sf.Color.BOLD + sf.Color.DARKCYAN + "\nPrecision {:.2f} Recall {:.2f} Fbeta-score {:.2f}".format(
-        mean_precision * 100, mean_recall * 100, mean_fbeta_score * 100) + sf.Color.END)
+        # Precision recall
+        log.info(sf.Color.BOLD + sf.Color.DARKCYAN + "\nPrecision {:.2f} Recall {:.2f} Fbeta-score {:.2f}".format(
+            mean_precision * 100, mean_recall * 100, mean_fbeta_score * 100) + sf.Color.END)
 
     # compare probability predictions of the model
     if run_prob_predictions:
@@ -223,7 +239,8 @@ def accuracy(y_true, y_pred):
 # If run_prob_predictions is False, we rely on the model to give classified outputs.
 # If true, then model gives probabilities as outputs and we use a threshold to classify them into
 # different classes. Currently probability predictions only support 2 classes
-def run_cv(x, y, run_prob_predictions=False, return_yprob=False, clf_class=RandomForest, **kwargs):
+def run_cv(x, y, run_prob_predictions=False, return_yprob=False, classification_threshold=0.5,
+           clf_class=RandomForest, **kwargs):
     # Construct a kfolds object
     kf = KFold(len(y), n_folds=5, shuffle=True)
 
@@ -269,7 +286,7 @@ def run_cv(x, y, run_prob_predictions=False, return_yprob=False, clf_class=Rando
 
     if run_prob_predictions:
         for idx, _ in np.ndindex(y_prob.shape):
-            if y_prob[idx, 1] < 0.45:
+            if y_prob[idx, 1] < classification_threshold:
                 y_pred[idx] = 0
             else:
                 y_pred[idx] = 1
@@ -279,16 +296,17 @@ def run_cv(x, y, run_prob_predictions=False, return_yprob=False, clf_class=Rando
         raise ValueError("Invalid combination - cannot return yprob when run_prob_predictions is False!")
 
     if return_yprob:
-        return y_prob
+        # Column 1 has the predicted y_prob for class "1"
+        return y_prob[:, 1]
     else:
         return y_pred
 
 
 # Test on different dataset. Classify users into if they'll churn or no
-# If run_prob_predictions is False, we rely on the model to give classified outputs.
-# If true, then model gives probabilities as outputs and we use a threshold to classify them into
-# different classes. Currently probability predictions only support 2 classes
-def run_test(x_train, y_train, x_test, run_prob_predictions=False, return_yprob=False,
+# If run_prob_predictions is False, we rely on the model to give classified outputs based on the
+# classification_threshold. If true, then model gives probabilities as outputs and we use a threshold to classify
+# them into different classes. Currently probability predictions only support 2 classes
+def run_test(x_train, y_train, x_test, run_prob_predictions=False, return_yprob=False, classification_threshold=0.5,
              clf_class=RandomForest, **kwargs):
     y_pred = np.zeros((len(x_test), 1), dtype=int)
 
@@ -304,7 +322,12 @@ def run_test(x_train, y_train, x_test, run_prob_predictions=False, return_yprob=
 
     if not run_prob_predictions:
         for iter_num in range(1, 2):
-            clf.set_params(n_estimators=100 * iter_num)
+            # For models with n_estimators, increase it with iteration (useful when warm_start=True for these models)
+            try:
+                clf.set_params(n_estimators=100 * iter_num)
+            except ValueError:
+                log.debug("Model does not have n_estimators")
+
             log.debug(clf)
             clf.fit(x_train, y_train)
 
@@ -332,11 +355,11 @@ def run_test(x_train, y_train, x_test, run_prob_predictions=False, return_yprob=
 
     if run_prob_predictions:
         for idx, _ in np.ndindex(y_prob.shape):
-            if y_prob[idx, 1] < 0.45:
+            # Column 1 has the predicted y_prob for class "1"
+            if y_prob[idx, 1] < classification_threshold:
                 y_pred[idx] = 0
             else:
                 y_pred[idx] = 1
-                # print y_prob
 
     y_pred = np.array(y_pred)
 
@@ -344,7 +367,8 @@ def run_test(x_train, y_train, x_test, run_prob_predictions=False, return_yprob=
         raise ValueError("Invalid combination - cannot return yprob when run_prob_predictions is False!")
 
     if return_yprob:
-        return y_prob
+        # Column 1 has the predicted y_prob for class "1"
+        return y_prob[:, 1]
     else:
         return y_pred
 
